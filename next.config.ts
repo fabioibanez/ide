@@ -10,10 +10,6 @@ import type { NextConfig } from 'next';
 // below. It's a no-op for `next build` with `output: 'export'`.
 const nextConfig: NextConfig = {
   output: 'export',
-  // Mounted under /ide on fabioibanez.com via a Cloudflare Workers Route.
-  // basePath makes Next emit assets and HTML under out/ide/* so the
-  // request path matches what the static asset server looks up.
-  basePath: '/ide',
   images: { unoptimized: true },
   async headers() {
     return [

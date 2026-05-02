@@ -2,7 +2,7 @@
 
 A barebones in-browser C IDE for exercising [`@jtrb/runtime`](https://www.npmjs.com/package/@jtrb/runtime) on a real deployment. Textarea + run button + breakpoints + variables panel. Nothing fancy.
 
-Lives at https://fabioibanez.com/ide via a Cloudflare Workers Route that points `fabioibanez.com/ide*` at this Worker.
+Lives at https://ide.fabioibanez.com — a Cloudflare Worker (Static Assets) attached to the `ide.fabioibanez.com` Custom Domain in the Cloudflare dashboard.
 
 ## Local dev
 
