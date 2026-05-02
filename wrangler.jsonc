@@ -1,0 +1,18 @@
+// Cloudflare Workers Static Assets config: tells wrangler to upload the
+// `next build` static export in `out/` and serve it from the edge.
+//
+// Without this file, wrangler's auto-detection would see Next.js in
+// package.json and try the OpenNext SSR migration, which doesn't work for
+// `output: 'export'` static sites.
+//
+// The Worker is wired into fabioibanez.com via a Workers Route in the
+// Cloudflare dashboard: `fabioibanez.com/ide*` -> this Worker.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ide",
+  "compatibility_date": "2026-05-02",
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page"
+  }
+}

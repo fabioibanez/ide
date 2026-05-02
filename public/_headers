@@ -1,0 +1,9 @@
+# Cloudflare Workers Static Assets _headers file
+# https://developers.cloudflare.com/workers/static-assets/headers/
+#
+# COOP/COEP are required by @jtrb/runtime so SharedArrayBuffer works
+# (the runtime uses it for stdin).
+
+/*
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Opener-Policy: same-origin

@@ -1,79 +1,221 @@
 'use client';
 
 import { Runtime } from '@jtrb/runtime';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const defaultCode = `#include <stdio.h>
 
 int main(void) {
-  printf("Hello from @jtrb/runtime!\\n");
+  int x = 1;
+  int y = 2;
+  int z = x + y;
+  printf("z=%d\\n", z);
   return 0;
 }
 `;
+
+// ---------- DAP types (just what we use) ----------
+
+type DapResponse<T = unknown> = {
+  type: 'response';
+  seq: number;
+  request_seq: number;
+  success: boolean;
+  command: string;
+  message?: string;
+  body?: T;
+};
+
+type StackFrame = {
+  id: number;
+  name: string;
+  line: number;
+  column: number;
+  source?: { path?: string };
+};
+
+type Scope = {
+  name: string;
+  variablesReference: number;
+  expensive: boolean;
+};
+
+type DapVariable = {
+  name: string;
+  value: string;
+  type?: string;
+  variablesReference: number;
+};
+
+type ScopeView = {
+  name: string;
+  variables: DapVariable[];
+};
+
+const FONT =
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+const FONT_SIZE = 13;
+const LINE_HEIGHT = 20; // px — must match between gutter and textarea
+const SOURCE_PATH = '/main.c';
 
 export default function Page() {
   const [code, setCode] = useState<string>(defaultCode);
   const [output, setOutput] = useState<string>('');
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const runtimeRef = useRef<Runtime | null>(null);
+  const [isStopped, setIsStopped] = useState<boolean>(false);
+  const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set([4]));
+  const [stoppedLine, setStoppedLine] = useState<number | null>(null);
+  const [scopes, setScopes] = useState<ScopeView[]>([]);
+  const [scrollTop, setScrollTop] = useState<number>(0);
 
-  const appendOutput = (chunk: string) => {
-    setOutput((prev) => prev + chunk);
-  };
+  const runtimeRef = useRef<Runtime | null>(null);
+  const breakpointsRef = useRef<Set<number>>(breakpoints);
+  const dapSeqRef = useRef<number>(1);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Keep the live ref in sync so the `initialized` event handler can read the
+  // latest breakpoints without going through React's stale-closure dance.
+  useEffect(() => {
+    breakpointsRef.current = breakpoints;
+  }, [breakpoints]);
+
+  const lineCount = useMemo(() => code.split('\n').length, [code]);
+
+  // ---------- DAP helpers ----------
+
+  const dapSend = useCallback(<T,>(command: string, args: Record<string, unknown>): DapResponse<T> | null => {
+    const rt = runtimeRef.current;
+    if (!rt) return null;
+    const res = rt.debugger.send({
+      type: 'request',
+      seq: dapSeqRef.current++,
+      command,
+      arguments: args,
+    });
+    return res as DapResponse<T> | null;
+  }, []);
+
+  const sendBreakpoints = useCallback(() => {
+    const lines = Array.from(breakpointsRef.current).sort((a, b) => a - b);
+    dapSend('setBreakpoints', {
+      source: { path: SOURCE_PATH },
+      breakpoints: lines.map((line) => ({ line })),
+    });
+  }, [dapSend]);
+
+  // Fetch the top frame, then its scopes, then the variables in each scope.
+  // Kept simple: we only inspect the topmost frame (that's where we stopped).
+  const fetchScopesForTopFrame = useCallback(async () => {
+    const stackRes = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', { threadId: 1 });
+    const frames = stackRes?.body?.stackFrames ?? [];
+    if (frames.length === 0) {
+      setStoppedLine(null);
+      setScopes([]);
+      return;
+    }
+    const top = frames[0];
+    setStoppedLine(top.line);
+
+    const scopesRes = dapSend<{ scopes: Scope[] }>('scopes', { frameId: top.id });
+    const scopeList = scopesRes?.body?.scopes ?? [];
+
+    const views: ScopeView[] = [];
+    for (const sc of scopeList) {
+      const varsRes = dapSend<{ variables: DapVariable[] }>('variables', {
+        variablesReference: sc.variablesReference,
+      });
+      views.push({ name: sc.name, variables: varsRes?.body?.variables ?? [] });
+    }
+    setScopes(views);
+  }, [dapSend]);
+
+  // ---------- Run / stop / continue ----------
 
   const handleRun = async () => {
     if (isRunning) return;
     setOutput('');
+    setStoppedLine(null);
+    setScopes([]);
+    setIsStopped(false);
     setIsRunning(true);
 
     let rt: Runtime | null = null;
     try {
       rt = await Runtime.create('c');
       runtimeRef.current = rt;
+      dapSeqRef.current = 1;
 
       const decoder = new TextDecoder();
-      const sink = (label: string) =>
+      const sink = () =>
         new WritableStream<Uint8Array>({
-          write: (chunk) => {
-            void label;
-            appendOutput(decoder.decode(chunk));
-          },
+          write: (chunk) => setOutput((prev) => prev + decoder.decode(chunk)),
         });
-      void rt.stdout.pipeTo(sink('stdout')).catch(() => {});
-      void rt.stderr.pipeTo(sink('stderr')).catch(() => {});
+      void rt.stdout.pipeTo(sink()).catch(() => {});
+      void rt.stderr.pipeTo(sink()).catch(() => {});
 
       rt.fs = { 'main.c': code };
 
-      // DAP handshake — the worker blocks until configurationDone is sent
-      // after the `initialized` event arrives. Skipping this hangs rt.run().
-      let dapSeq = 1;
-      const dapSend = (command: string, args: Record<string, unknown>) => {
-        if (!rt) return;
-        rt.debugger.send({ type: 'request', seq: dapSeq++, command, arguments: args });
-      };
-
       rt.debugger.on('event', (msg: unknown) => {
         const m = msg as { type?: string; event?: string };
-        if (m?.type === 'event' && m?.event === 'initialized') {
-          dapSend('setBreakpoints', { source: { path: '/main.c' }, breakpoints: [] });
+        if (m?.type !== 'event') return;
+        if (m.event === 'initialized') {
+          sendBreakpoints();
           dapSend('setExceptionBreakpoints', { filters: [] });
           dapSend('configurationDone', {});
+        } else if (m.event === 'stopped') {
+          setIsStopped(true);
+          void fetchScopesForTopFrame();
+        } else if (m.event === 'terminated') {
+          setIsStopped(false);
+          setStoppedLine(null);
+          setScopes([]);
         }
       });
 
       dapSend('initialize', {});
       await rt.run();
     } catch (err) {
-      appendOutput(`\n[ide error] ${err instanceof Error ? err.message : String(err)}\n`);
+      setOutput((prev) => prev + `\n[ide error] ${err instanceof Error ? err.message : String(err)}\n`);
     } finally {
       runtimeRef.current = null;
       setIsRunning(false);
+      setIsStopped(false);
+      setStoppedLine(null);
+      setScopes([]);
     }
   };
 
   const handleStop = () => {
     runtimeRef.current?.stop();
   };
+
+  const handleContinue = () => {
+    if (!isStopped) return;
+    dapSend('continue', { threadId: 1 });
+    setIsStopped(false);
+    setStoppedLine(null);
+    setScopes([]);
+  };
+
+  // ---------- Breakpoints ----------
+
+  const toggleBreakpoint = (line: number) => {
+    setBreakpoints((prev) => {
+      const next = new Set(prev);
+      if (next.has(line)) next.delete(line);
+      else next.add(line);
+      return next;
+    });
+    // If we're already running, push the new set to the runtime immediately.
+    if (runtimeRef.current) {
+      // Defer to next tick so breakpointsRef has been updated by the effect above.
+      queueMicrotask(() => sendBreakpoints());
+    }
+  };
+
+  // ---------- UI ----------
+
+  const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
     <main
@@ -89,78 +231,270 @@ export default function Page() {
       <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>ide</h1>
         <span style={{ fontSize: 12, color: '#888' }}>@jtrb/runtime playground</span>
+        <span style={{ fontSize: 11, color: '#666', marginLeft: 8 }}>
+          click a line number to toggle a breakpoint
+        </span>
         <div style={{ flex: 1 }} />
-        <button
-          onClick={handleRun}
-          disabled={isRunning}
-          style={{
-            padding: '6px 14px',
-            background: isRunning ? '#333' : '#2563eb',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: isRunning ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-            fontSize: 13,
-          }}
-        >
-          {isRunning ? 'running…' : 'run'}
-        </button>
-        <button
-          onClick={handleStop}
-          disabled={!isRunning}
-          style={{
-            padding: '6px 14px',
-            background: !isRunning ? '#222' : '#7f1d1d',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            cursor: !isRunning ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-            fontSize: 13,
-          }}
-        >
-          stop
-        </button>
+        <Btn label={isRunning ? 'running…' : 'run'} onClick={handleRun} disabled={isRunning} color="#2563eb" />
+        <Btn label="continue" onClick={handleContinue} disabled={!isStopped} color="#16a34a" />
+        <Btn label="stop" onClick={handleStop} disabled={!isRunning} color="#7f1d1d" />
       </header>
 
-      <textarea
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
-        spellCheck={false}
-        style={{
-          flex: 1,
-          minHeight: 200,
-          padding: 12,
-          background: '#111',
-          color: '#e5e5e5',
-          border: '1px solid #222',
-          borderRadius: 4,
-          fontFamily: 'inherit',
-          fontSize: 13,
-          lineHeight: 1.5,
-          resize: 'none',
-          outline: 'none',
-        }}
-      />
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 12 }}>
+        {/* Editor with gutter */}
+        <div
+          style={{
+            display: 'flex',
+            flex: 1,
+            minWidth: 0,
+            border: '1px solid #222',
+            borderRadius: 4,
+            background: '#111',
+            overflow: 'hidden',
+          }}
+        >
+          <Gutter
+            lines={lineNumbers}
+            breakpoints={breakpoints}
+            stoppedLine={stoppedLine}
+            scrollTop={scrollTop}
+            onToggle={toggleBreakpoint}
+          />
+          <textarea
+            ref={taRef}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+            spellCheck={false}
+            wrap="off"
+            style={{
+              flex: 1,
+              padding: `0 12px`,
+              background: 'transparent',
+              color: '#e5e5e5',
+              border: 'none',
+              fontFamily: FONT,
+              fontSize: FONT_SIZE,
+              lineHeight: `${LINE_HEIGHT}px`,
+              resize: 'none',
+              outline: 'none',
+              whiteSpace: 'pre',
+              overflow: 'auto',
+            }}
+          />
+        </div>
+
+        {/* Variables panel */}
+        <aside
+          style={{
+            width: 320,
+            flexShrink: 0,
+            background: '#0d0d0d',
+            border: '1px solid #222',
+            borderRadius: 4,
+            padding: 12,
+            overflow: 'auto',
+            fontSize: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: 1.5,
+              color: '#888',
+              textTransform: 'uppercase',
+              marginBottom: 8,
+            }}
+          >
+            variables
+          </div>
+          {!isStopped && (
+            <div style={{ color: '#555', fontStyle: 'italic' }}>
+              {isRunning ? 'running — set a breakpoint and run again to inspect' : 'not running'}
+            </div>
+          )}
+          {isStopped && stoppedLine !== null && (
+            <div style={{ color: '#fbbf24', marginBottom: 8 }}>stopped at line {stoppedLine}</div>
+          )}
+          {isStopped && scopes.length === 0 && (
+            <div style={{ color: '#555', fontStyle: 'italic' }}>no scopes available</div>
+          )}
+          {scopes.map((scope) => (
+            <div key={scope.name} style={{ marginBottom: 12 }}>
+              <div
+                style={{
+                  color: '#a5b4fc',
+                  fontWeight: 600,
+                  marginBottom: 4,
+                  fontSize: 11,
+                  letterSpacing: 0.6,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {scope.name}
+              </div>
+              {scope.variables.length === 0 ? (
+                <div style={{ color: '#555', paddingLeft: 8 }}>(empty)</div>
+              ) : (
+                scope.variables.map((v) => (
+                  <VariableRow key={v.name} variable={v} dapSend={dapSend} depth={0} />
+                ))
+              )}
+            </div>
+          ))}
+        </aside>
+      </div>
 
       <pre
         style={{
           margin: 0,
           padding: 12,
-          height: 220,
+          height: 180,
           overflow: 'auto',
           background: '#000',
           color: '#d4d4d4',
           border: '1px solid #222',
           borderRadius: 4,
-          fontFamily: 'inherit',
-          fontSize: 13,
+          fontFamily: FONT,
+          fontSize: FONT_SIZE,
           whiteSpace: 'pre-wrap',
         }}
       >
         {output || <span style={{ color: '#555' }}>output will appear here</span>}
       </pre>
     </main>
+  );
+}
+
+// ---------- Components ----------
+
+function Btn(props: { label: string; onClick: () => void; disabled?: boolean; color: string }) {
+  const { label, onClick, disabled, color } = props;
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '6px 14px',
+        background: disabled ? '#222' : color,
+        color: '#fff',
+        border: 'none',
+        borderRadius: 4,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontFamily: FONT,
+        fontSize: 13,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function Gutter(props: {
+  lines: number[];
+  breakpoints: Set<number>;
+  stoppedLine: number | null;
+  scrollTop: number;
+  onToggle: (line: number) => void;
+}) {
+  const { lines, breakpoints, stoppedLine, scrollTop, onToggle } = props;
+  return (
+    <div
+      style={{
+        width: 56,
+        flexShrink: 0,
+        borderRight: '1px solid #222',
+        background: '#0a0a0a',
+        overflow: 'hidden',
+        position: 'relative',
+        userSelect: 'none',
+      }}
+    >
+      <div style={{ transform: `translateY(${-scrollTop}px)`, paddingTop: 0 }}>
+        {lines.map((line) => {
+          const hasBp = breakpoints.has(line);
+          const isStopped = stoppedLine === line;
+          return (
+            <div
+              key={line}
+              onClick={() => onToggle(line)}
+              style={{
+                height: LINE_HEIGHT,
+                lineHeight: `${LINE_HEIGHT}px`,
+                paddingRight: 8,
+                fontSize: FONT_SIZE,
+                fontFamily: FONT,
+                color: isStopped ? '#000' : '#666',
+                background: isStopped ? '#fbbf24' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+              }}
+              title={hasBp ? 'click to remove breakpoint' : 'click to add breakpoint'}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 10,
+                  height: 10,
+                  marginLeft: 6,
+                  borderRadius: '50%',
+                  background: hasBp ? '#ef4444' : 'transparent',
+                  border: hasBp ? 'none' : '1px solid #2a2a2a',
+                }}
+              />
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{line}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function VariableRow(props: {
+  variable: DapVariable;
+  dapSend: <T,>(command: string, args: Record<string, unknown>) => DapResponse<T> | null;
+  depth: number;
+}) {
+  const { variable, dapSend, depth } = props;
+  const [expanded, setExpanded] = useState<boolean>(false);
+  const [children, setChildren] = useState<DapVariable[] | null>(null);
+  const expandable = variable.variablesReference > 0;
+
+  const handleToggle = () => {
+    if (!expandable) return;
+    if (!expanded && children === null) {
+      const res = dapSend<{ variables: DapVariable[] }>('variables', {
+        variablesReference: variable.variablesReference,
+      });
+      setChildren(res?.body?.variables ?? []);
+    }
+    setExpanded((e) => !e);
+  };
+
+  return (
+    <div style={{ paddingLeft: depth * 12 }}>
+      <div
+        onClick={handleToggle}
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 6,
+          padding: '2px 4px',
+          borderRadius: 2,
+          cursor: expandable ? 'pointer' : 'default',
+        }}
+      >
+        <span style={{ width: 10, color: '#666' }}>{expandable ? (expanded ? '▾' : '▸') : ''}</span>
+        <span style={{ color: '#e5e5e5' }}>{variable.name}</span>
+        {variable.type && <span style={{ color: '#64748b', fontSize: 10 }}>{variable.type}</span>}
+        <span style={{ color: '#94a3b8', marginLeft: 'auto', textAlign: 'right' }}>{variable.value}</span>
+      </div>
+      {expanded && children?.map((child) => (
+        <VariableRow key={child.name} variable={child} dapSend={dapSend} depth={depth + 1} />
+      ))}
+    </div>
   );
 }

@@ -1,8 +1,16 @@
 import type { NextConfig } from 'next';
 
 // COOP/COEP are required by @jtrb/runtime to use SharedArrayBuffer for stdin.
-// Without these the runtime worker will silently break.
+//
+// Production (Cloudflare Workers Static Assets): set via `public/_headers`,
+// which is copied into `out/_headers` and read by the Workers asset server.
+//
+// Local dev (`next dev`): `_headers` is a Cloudflare convention and is NOT
+// honored by the Next dev server, so we also keep the `headers()` config
+// below. It's a no-op for `next build` with `output: 'export'`.
 const nextConfig: NextConfig = {
+  output: 'export',
+  images: { unoptimized: true },
   async headers() {
     return [
       {

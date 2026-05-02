@@ -4,5 +4,8 @@ out
 .DS_Store
 *.log
 .env*.local
-.vercel
 next-env.d.ts
+
+# wrangler local state and secrets — never commit
+.wrangler
+.dev.vars
