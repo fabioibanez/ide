@@ -3,6 +3,7 @@
 import { Runtime } from '@jtrb/runtime';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CodeEditor from './CodeEditor';
+import ResizableWorkspace from './ResizableWorkspace';
 
 const defaultCode = `#include <stdio.h>
 
@@ -63,7 +64,7 @@ export default function Page() {
   const [output, setOutput] = useState<string>('');
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isStopped, setIsStopped] = useState<boolean>(false);
-  const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set([4]));
+  const [breakpoints, setBreakpoints] = useState<Set<number>>(() => new Set());
   const [stoppedLine, setStoppedLine] = useState<number | null>(null);
   const [scopes, setScopes] = useState<ScopeView[]>([]);
 
@@ -146,8 +147,8 @@ export default function Page() {
         new WritableStream<Uint8Array>({
           write: (chunk) => setOutput((prev) => prev + decoder.decode(chunk)),
         });
-      void rt.stdout.pipeTo(sink()).catch(() => {});
-      void rt.stderr.pipeTo(sink()).catch(() => {});
+      void rt.stdout.pipeTo(sink()).catch(() => { });
+      void rt.stderr.pipeTo(sink()).catch(() => { });
 
       rt.fs = { 'main.c': code };
 
@@ -231,106 +232,87 @@ export default function Page() {
         <Btn label="stop" onClick={handleStop} disabled={!isRunning} color="#7f1d1d" />
       </header>
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 12 }}>
-        {/* Editor */}
-        <div
-          style={{
-            display: 'flex',
-            flex: 1,
-            minWidth: 0,
-            border: '1px solid #1a1a1a',
-            borderRadius: 4,
-            background: '#0d0d0d',
-            overflow: 'hidden',
-          }}
-        >
-          <CodeEditor
-            value={code}
-            onChange={setCode}
-            breakpoints={breakpoints}
-            onToggleBreakpoint={toggleBreakpoint}
-            stoppedLine={stoppedLine}
-          />
-        </div>
-
-        {/* Variables panel */}
-        <aside
-          style={{
-            width: 320,
-            flexShrink: 0,
-            background: '#0d0d0d',
-            border: '1px solid #222',
-            borderRadius: 4,
-            padding: 12,
-            overflow: 'auto',
-            fontSize: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              letterSpacing: 1.5,
-              color: '#888',
-              textTransform: 'uppercase',
-              marginBottom: 8,
-            }}
-          >
-            variables
-          </div>
-          {!isStopped && (
-            <div style={{ color: '#555', fontStyle: 'italic' }}>
-              {isRunning ? 'running — set a breakpoint and run again to inspect' : 'not running'}
-            </div>
-          )}
-          {isStopped && stoppedLine !== null && (
-            <div style={{ color: '#fbbf24', marginBottom: 8 }}>stopped at line {stoppedLine}</div>
-          )}
-          {isStopped && scopes.length === 0 && (
-            <div style={{ color: '#555', fontStyle: 'italic' }}>no scopes available</div>
-          )}
-          {scopes.map((scope) => (
-            <div key={scope.name} style={{ marginBottom: 12 }}>
-              <div
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <ResizableWorkspace
+          panes={{
+            editor: (
+              <CodeEditor
+                value={code}
+                onChange={setCode}
+                breakpoints={breakpoints}
+                onToggleBreakpoint={toggleBreakpoint}
+                stoppedLine={stoppedLine}
+              />
+            ),
+            variables: (
+              <aside
                 style={{
-                  color: '#a5b4fc',
-                  fontWeight: 600,
-                  marginBottom: 4,
-                  fontSize: 11,
-                  letterSpacing: 0.6,
-                  textTransform: 'uppercase',
+                  height: '100%',
+                  padding: 12,
+                  overflow: 'auto',
+                  fontSize: 12,
+                  boxSizing: 'border-box',
                 }}
               >
-                {scope.name}
-              </div>
-              {scope.variables.length === 0 ? (
-                <div style={{ color: '#555', paddingLeft: 8 }}>(empty)</div>
-              ) : (
-                scope.variables.map((v) => (
-                  <VariableRow key={v.name} variable={v} dapSend={dapSend} depth={0} />
-                ))
-              )}
-            </div>
-          ))}
-        </aside>
+                {!isStopped && (
+                  <div style={{ color: '#555', fontStyle: 'italic' }}>
+                    {isRunning ? 'running — set a breakpoint and run again to inspect' : 'not running'}
+                  </div>
+                )}
+                {isStopped && stoppedLine !== null && (
+                  <div style={{ color: '#fbbf24', marginBottom: 8 }}>stopped at line {stoppedLine}</div>
+                )}
+                {isStopped && scopes.length === 0 && (
+                  <div style={{ color: '#555', fontStyle: 'italic' }}>no scopes available</div>
+                )}
+                {scopes.map((scope) => (
+                  <div key={scope.name} style={{ marginBottom: 12 }}>
+                    <div
+                      style={{
+                        color: '#a5b4fc',
+                        fontWeight: 600,
+                        marginBottom: 4,
+                        fontSize: 11,
+                        letterSpacing: 0.6,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {scope.name}
+                    </div>
+                    {scope.variables.length === 0 ? (
+                      <div style={{ color: '#555', paddingLeft: 8 }}>(empty)</div>
+                    ) : (
+                      scope.variables.map((v) => (
+                        <VariableRow key={v.name} variable={v} dapSend={dapSend} depth={0} />
+                      ))
+                    )}
+                  </div>
+                ))}
+              </aside>
+            ),
+            output: (
+              <pre
+                style={{
+                  margin: 0,
+                  padding: 12,
+                  height: '100%',
+                  boxSizing: 'border-box',
+                  overflow: 'auto',
+                  background: '#000',
+                  color: '#d4d4d4',
+                  fontFamily: FONT,
+                  fontSize: FONT_SIZE,
+                  whiteSpace: 'pre-wrap',
+                  flex: 1,
+                  minHeight: 0,
+                }}
+              >
+                {output || <span style={{ color: '#555' }}>output will appear here</span>}
+              </pre>
+            ),
+          }}
+        />
       </div>
-
-      <pre
-        style={{
-          margin: 0,
-          padding: 12,
-          height: 180,
-          overflow: 'auto',
-          background: '#000',
-          color: '#d4d4d4',
-          border: '1px solid #222',
-          borderRadius: 4,
-          fontFamily: FONT,
-          fontSize: FONT_SIZE,
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-        {output || <span style={{ color: '#555' }}>output will appear here</span>}
-      </pre>
     </main>
   );
 }
@@ -361,7 +343,7 @@ function Btn(props: { label: string; onClick: () => void; disabled?: boolean; co
 
 function VariableRow(props: {
   variable: DapVariable;
-  dapSend: <T,>(command: string, args: Record<string, unknown>) => DapResponse<T> | null;
+  dapSend: <T, >(command: string, args: Record<string, unknown>) => DapResponse<T> | null;
   depth: number;
 }) {
   const { variable, dapSend, depth } = props;

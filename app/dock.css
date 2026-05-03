@@ -1,0 +1,17 @@
+/* react-resizable-panels separators */
+[data-separator]:not([data-separator='disabled']) {
+  background: #1a1a1a;
+  transition:
+    background 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+[data-separator]:not([data-separator='disabled']):hover {
+  background: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.12);
+}
+
+[data-separator='active'] {
+  background: rgba(59, 130, 246, 0.55) !important;
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.2);
+}
