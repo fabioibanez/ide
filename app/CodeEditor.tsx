@@ -3,32 +3,130 @@
 import { useEffect, useMemo, useRef } from 'react';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
-import { EditorView, Decoration, gutter, GutterMarker } from '@codemirror/view';
-import { StateField, StateEffect, type Extension } from '@codemirror/state';
+import { Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
+import { StateEffect, StateField, type Extension } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
-// React owns the canonical Set<number> of breakpoint lines. We mirror it into
-// this CM field via a dispatched effect (Set<number>, not RangeSet — we don't
-// auto-track edits, matching the original textarea behavior).
+// ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+//
+// Every color and dimension that affects the editor's look lives here so
+// tweaking the palette is a one-stop edit. We deliberately use `theme="none"`
+// on the CodeMirror component below so nothing else colors the editor — this
+// object is the single source of truth.
+
+const theme = {
+  bg: '#0d0d0d',
+  fg: '#e5e7eb',
+  caret: '#f1f5f9',
+  selection: '#1e3a8a',
+  stoppedLine: 'rgba(251, 191, 36, 0.18)',
+  gutter: {
+    bg: '#0a0a0a',
+    border: '1px solid #1a1a1a',
+    fg: '#666',
+    hoverBg: '#141414',
+    minWidth: 40, // px — tightens the gap between the breakpoint dot and number
+  },
+  breakpoint: {
+    dotSize: 10, // px
+    dotMargin: 6, // px (left)
+    fill: '#ef4444',
+    holeBorder: '1px solid #2a2a2a',
+  },
+  font: {
+    family:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    size: '13px',
+    // 1.54 ≈ 20px on a 13px font — matches the original textarea exactly.
+    lineHeight: '1.54',
+  },
+  // Tailwind 400-series — saturated enough to pop on a near-black background
+  // while staying coherent with the rest of the IDE's palette.
+  syntax: {
+    keyword: '#c084fc', // violet-400  — int, void, return, if, for, ...
+    type: '#f472b6', // pink-400    — typedef'd type names
+    fn: '#60a5fa', // blue-400    — function names at call/declaration sites
+    string: '#4ade80', // green-400   — "literal"
+    number: '#fb923c', // orange-400  — 1, 2, true
+    preproc: '#22d3ee', // cyan-400    — #include, #define
+    comment: '#52525b', // zinc-600    — // ... (italic)
+    variable: '#e2e8f0', // slate-200   — local identifiers
+    operator: '#94a3b8', // slate-400   — +, -, ;, (), {}, ...
+  },
+} as const;
+
+const editorChrome = EditorView.theme(
+  {
+    '&': {
+      height: '100%',
+      backgroundColor: theme.bg,
+      color: theme.fg,
+      fontSize: theme.font.size,
+    },
+    '.cm-scroller': {
+      fontFamily: theme.font.family,
+      lineHeight: theme.font.lineHeight,
+    },
+    // Strip CM defaults so vertical/horizontal rhythm matches the original
+    // textarea (which had `padding: 0 12px`).
+    '.cm-content': { caretColor: theme.caret, padding: '0' },
+    '.cm-line': { padding: '0 12px' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: theme.caret },
+    '&.cm-focused .cm-selectionBackground, ::selection': {
+      backgroundColor: theme.selection,
+    },
+    '.cm-gutters': {
+      backgroundColor: theme.gutter.bg,
+      borderRight: theme.gutter.border,
+      color: theme.gutter.fg,
+      cursor: 'pointer',
+      userSelect: 'none',
+    },
+    '.cm-gutterElement:hover': { backgroundColor: theme.gutter.hoverBg },
+    '.cm-stopped-line': { backgroundColor: theme.stoppedLine },
+  },
+  { dark: true },
+);
+
+const cppSyntax = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.modifier, t.operatorKeyword], color: theme.syntax.keyword },
+  { tag: [t.typeName, t.standard(t.typeName)], color: theme.syntax.type },
+  { tag: t.function(t.variableName), color: theme.syntax.fn },
+  { tag: [t.string, t.character, t.special(t.string)], color: theme.syntax.string },
+  { tag: [t.number, t.bool], color: theme.syntax.number },
+  { tag: [t.processingInstruction, t.meta], color: theme.syntax.preproc },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: theme.syntax.comment, fontStyle: 'italic' },
+  { tag: t.variableName, color: theme.syntax.variable },
+  { tag: [t.operator, t.punctuation, t.bracket, t.brace, t.paren, t.squareBracket], color: theme.syntax.operator },
+]);
+
+// ---------------------------------------------------------------------------
+// Breakpoints
+// ---------------------------------------------------------------------------
+//
+// React owns the canonical Set<number>. We mirror it into `breakpointsField`
+// via a dispatched `setBreakpointsEffect`; gutter clicks call back through the
+// `toggleRef` so React stays the single source of truth. Stored as Set<number>
+// (not RangeSet) because we don't track breakpoints across edits — matches the
+// prior textarea behavior.
 
 const setBreakpointsEffect = StateEffect.define<number[]>();
 
-const breakpointsLineSet = StateField.define<ReadonlySet<number>>({
+const breakpointsField = StateField.define<ReadonlySet<number>>({
   create: () => new Set(),
   update(value, tr) {
-    for (const e of tr.effects) {
-      if (e.is(setBreakpointsEffect)) value = new Set(e.value);
-    }
+    for (const e of tr.effects) if (e.is(setBreakpointsEffect)) value = new Set(e.value);
     return value;
   },
 });
 
-// Single combined gutter: hole/dot on the left, line number on the right.
-// Matches the original layout. Clicking anywhere on the row toggles the
-// breakpoint.
+// One combined gutter row: hole/dot on the left, line number on the right
+// (matches the original textarea-era Gutter component layout).
 class LineGutterMarker extends GutterMarker {
-  constructor(public lineNumber: number, public hasBreakpoint: boolean) {
+  constructor(readonly lineNumber: number, readonly hasBreakpoint: boolean) {
     super();
   }
 
@@ -41,101 +139,77 @@ class LineGutterMarker extends GutterMarker {
   }
 
   toDOM(): HTMLElement {
-    // Mirror the original textarea-era Gutter component exactly: 56px wide,
-    // dot at the left with 6px gap, line number at the right with 8px padding,
-    // pushed apart by justify-content:space-between. min-width (rather than
-    // fixed width) lets it grow if line numbers exceed 4 digits.
     const wrap = document.createElement('div');
     wrap.style.cssText =
-      'display:flex;align-items:center;justify-content:space-between;min-width:40px;padding-right:8px;color:#666;';
+      `display:flex;align-items:center;justify-content:space-between;` +
+      `min-width:${theme.gutter.minWidth}px;padding-right:8px;color:${theme.gutter.fg};`;
 
+    const { dotSize, dotMargin, fill, holeBorder } = theme.breakpoint;
     const dot = document.createElement('span');
     dot.style.cssText =
-      'flex:none;display:inline-block;margin-left:6px;width:10px;height:10px;border-radius:50%;' +
+      `flex:none;display:inline-block;margin-left:${dotMargin}px;` +
+      `width:${dotSize}px;height:${dotSize}px;border-radius:50%;` +
       (this.hasBreakpoint
-        ? 'background:#ef4444;'
-        : 'background:transparent;border:1px solid #2a2a2a;');
+        ? `background:${fill};`
+        : `background:transparent;border:${holeBorder};`);
 
     const num = document.createElement('span');
     num.textContent = String(this.lineNumber);
     num.style.cssText = 'font-variant-numeric:tabular-nums;';
 
-    wrap.appendChild(dot);
-    wrap.appendChild(num);
+    wrap.append(dot, num);
     return wrap;
   }
 }
 
-// Stopped-line highlight via state field + line decoration.
+// `toggleRef` is a ref so the click handler always sees the freshest callback
+// without having to rebuild the gutter extension on every parent render.
+function makeBreakpointGutter(toggleRef: { current: (line: number) => void }) {
+  return gutter({
+    class: 'cm-line-gutter',
+    lineMarker: (view, line) => {
+      const lineNumber = view.state.doc.lineAt(line.from).number;
+      return new LineGutterMarker(lineNumber, view.state.field(breakpointsField).has(lineNumber));
+    },
+    lineMarkerChange: (update) =>
+      update.docChanged ||
+      update.startState.field(breakpointsField) !== update.state.field(breakpointsField),
+    // Spacer sized for up to 4-digit line numbers; gutter grows past this if needed.
+    initialSpacer: () => new LineGutterMarker(9999, false),
+    domEventHandlers: {
+      mousedown(view, line) {
+        toggleRef.current(view.state.doc.lineAt(line.from).number);
+        return true;
+      },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Stopped-line highlight
+// ---------------------------------------------------------------------------
 
 const setStoppedLineEffect = StateEffect.define<number | null>();
 
 const stoppedLineField = StateField.define<number | null>({
   create: () => null,
   update(value, tr) {
-    for (const e of tr.effects) {
-      if (e.is(setStoppedLineEffect)) value = e.value;
-    }
+    for (const e of tr.effects) if (e.is(setStoppedLineEffect)) value = e.value;
     return value;
   },
-});
-
-const stoppedLineDecoration = Decoration.line({
-  attributes: { class: 'cm-stopped-line' },
 });
 
 const stoppedLineHighlight = EditorView.decorations.compute([stoppedLineField], (state) => {
   const ln = state.field(stoppedLineField);
   if (ln == null || ln < 1 || ln > state.doc.lines) return Decoration.none;
-  const line = state.doc.line(ln);
-  return Decoration.set([stoppedLineDecoration.range(line.from)]);
+  return Decoration.set([
+    Decoration.line({ attributes: { class: 'cm-stopped-line' } }).range(state.doc.line(ln).from),
+  ]);
 });
 
-// Minimal syntax palette — stays in the same dark/almost-black world as the
-// rest of the UI rather than pulling in a busy third-party theme.
-const cHighlightStyle = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.modifier, t.operatorKeyword], color: '#7dd3fc' },
-  { tag: [t.string, t.character, t.special(t.string)], color: '#86efac' },
-  { tag: [t.number, t.bool], color: '#fbbf24' },
-  { tag: [t.comment, t.lineComment, t.blockComment], color: '#6b7280', fontStyle: 'italic' },
-  { tag: t.function(t.variableName), color: '#a5b4fc' },
-  { tag: [t.processingInstruction, t.meta], color: '#7dd3fc' },
-  { tag: [t.typeName, t.standard(t.typeName)], color: '#f0abfc' },
-  { tag: [t.operator, t.punctuation, t.bracket, t.brace, t.paren, t.squareBracket], color: '#94a3b8' },
-]);
-
-const editorTheme = EditorView.theme(
-  {
-    '&': {
-      height: '100%',
-      fontSize: '13px',
-      backgroundColor: '#111',
-      color: '#e5e5e5',
-    },
-    '.cm-scroller': {
-      fontFamily:
-        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      // Match the original textarea's line-height (20px on 13px font ≈ 1.54).
-      lineHeight: '1.54',
-    },
-    // Strip CM's default 4px top/bottom padding on .cm-content; match the
-    // original textarea's `padding: 0 12px` on each line.
-    '.cm-content': { caretColor: '#e5e5e5', padding: '0' },
-    '.cm-line': { padding: '0 12px' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e5e5e5' },
-    '&.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: '#1e3a8a' },
-    '.cm-gutters': {
-      backgroundColor: '#0a0a0a',
-      borderRight: '1px solid #222',
-      color: '#666',
-      cursor: 'pointer',
-      userSelect: 'none',
-    },
-    '.cm-gutterElement:hover': { backgroundColor: '#141414' },
-    '.cm-stopped-line': { backgroundColor: 'rgba(251, 191, 36, 0.18)' },
-  },
-  { dark: true },
-);
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export type CodeEditorProps = {
   value: string;
@@ -146,70 +220,47 @@ export type CodeEditorProps = {
 };
 
 export default function CodeEditor(props: CodeEditorProps) {
-  const { value, onChange, breakpoints, onToggleBreakpoint, stoppedLine } = props;
-
   const cmRef = useRef<ReactCodeMirrorRef>(null);
 
-  // Ref so the gutter click handler always sees the latest toggle without
-  // requiring us to rebuild extensions.
-  const toggleRef = useRef(onToggleBreakpoint);
-  toggleRef.current = onToggleBreakpoint;
+  const toggleRef = useRef(props.onToggleBreakpoint);
+  toggleRef.current = props.onToggleBreakpoint;
 
   const extensions = useMemo<Extension[]>(
     () => [
       cpp(),
-      breakpointsLineSet,
+      breakpointsField,
       stoppedLineField,
       stoppedLineHighlight,
-      gutter({
-        class: 'cm-line-gutter',
-        lineMarker: (view, line) => {
-          const lineNumber = view.state.doc.lineAt(line.from).number;
-          const set = view.state.field(breakpointsLineSet);
-          return new LineGutterMarker(lineNumber, set.has(lineNumber));
-        },
-        lineMarkerChange: (update) =>
-          update.docChanged ||
-          update.startState.field(breakpointsLineSet) !== update.state.field(breakpointsLineSet),
-        // Wide enough that line numbers up to 9999 fit without resizing.
-        initialSpacer: () => new LineGutterMarker(9999, false),
-        domEventHandlers: {
-          mousedown(view, line) {
-            const ln = view.state.doc.lineAt(line.from).number;
-            toggleRef.current(ln);
-            return true;
-          },
-        },
-      }),
-      syntaxHighlighting(cHighlightStyle),
-      editorTheme,
+      makeBreakpointGutter(toggleRef),
+      syntaxHighlighting(cppSyntax),
+      editorChrome,
     ],
     [],
   );
 
+  // React → CM sync: re-dispatch whenever the React state changes.
   useEffect(() => {
-    const view = cmRef.current?.view;
-    if (!view) return;
-    view.dispatch({ effects: setBreakpointsEffect.of(Array.from(breakpoints)) });
-  }, [breakpoints]);
+    cmRef.current?.view?.dispatch({
+      effects: setBreakpointsEffect.of(Array.from(props.breakpoints)),
+    });
+  }, [props.breakpoints]);
 
   useEffect(() => {
-    const view = cmRef.current?.view;
-    if (!view) return;
-    view.dispatch({ effects: setStoppedLineEffect.of(stoppedLine) });
-  }, [stoppedLine]);
+    cmRef.current?.view?.dispatch({
+      effects: setStoppedLineEffect.of(props.stoppedLine),
+    });
+  }, [props.stoppedLine]);
 
   return (
     <CodeMirror
       ref={cmRef}
-      value={value}
-      onChange={onChange}
+      value={props.value}
+      onChange={props.onChange}
       extensions={extensions}
-      // theme="none" — we provide all chrome + syntax styling above so the
-      // background stays #111 instead of @uiw's default dark grey.
-      theme="dark"
+      // We own every visual style above (chrome + syntax) — no @uiw defaults.
+      theme="none"
       basicSetup={{
-        // Render our own combined line-number + breakpoint gutter.
+        // We render our own combined breakpoint + line-number gutter.
         lineNumbers: false,
         foldGutter: false,
         highlightActiveLine: false,

@@ -238,9 +238,9 @@ export default function Page() {
             display: 'flex',
             flex: 1,
             minWidth: 0,
-            border: '1px solid #222',
+            border: '1px solid #1a1a1a',
             borderRadius: 4,
-            background: '#111',
+            background: '#0d0d0d',
             overflow: 'hidden',
           }}
         >
