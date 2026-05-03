@@ -1,7 +1,8 @@
 'use client';
 
 import { Runtime } from '@jtrb/runtime';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import CodeEditor from './CodeEditor';
 
 const defaultCode = `#include <stdio.h>
 
@@ -55,7 +56,6 @@ type ScopeView = {
 const FONT =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 const FONT_SIZE = 13;
-const LINE_HEIGHT = 20; // px — must match between gutter and textarea
 const SOURCE_PATH = '/main.c';
 
 export default function Page() {
@@ -66,20 +66,16 @@ export default function Page() {
   const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set([4]));
   const [stoppedLine, setStoppedLine] = useState<number | null>(null);
   const [scopes, setScopes] = useState<ScopeView[]>([]);
-  const [scrollTop, setScrollTop] = useState<number>(0);
 
   const runtimeRef = useRef<Runtime | null>(null);
   const breakpointsRef = useRef<Set<number>>(breakpoints);
   const dapSeqRef = useRef<number>(1);
-  const taRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Keep the live ref in sync so the `initialized` event handler can read the
   // latest breakpoints without going through React's stale-closure dance.
   useEffect(() => {
     breakpointsRef.current = breakpoints;
   }, [breakpoints]);
-
-  const lineCount = useMemo(() => code.split('\n').length, [code]);
 
   // ---------- DAP helpers ----------
 
@@ -199,7 +195,7 @@ export default function Page() {
 
   // ---------- Breakpoints ----------
 
-  const toggleBreakpoint = (line: number) => {
+  const toggleBreakpoint = useCallback((line: number) => {
     setBreakpoints((prev) => {
       const next = new Set(prev);
       if (next.has(line)) next.delete(line);
@@ -211,11 +207,9 @@ export default function Page() {
       // Defer to next tick so breakpointsRef has been updated by the effect above.
       queueMicrotask(() => sendBreakpoints());
     }
-  };
+  }, [sendBreakpoints]);
 
   // ---------- UI ----------
-
-  const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
     <main
@@ -230,10 +224,7 @@ export default function Page() {
     >
       <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>ide</h1>
-        <span style={{ fontSize: 12, color: '#888' }}>@jtrb/runtime playground</span>
-        <span style={{ fontSize: 11, color: '#666', marginLeft: 8 }}>
-          click a line number to toggle a breakpoint
-        </span>
+
         <div style={{ flex: 1 }} />
         <Btn label={isRunning ? 'running…' : 'run'} onClick={handleRun} disabled={isRunning} color="#2563eb" />
         <Btn label="continue" onClick={handleContinue} disabled={!isStopped} color="#16a34a" />
@@ -241,7 +232,7 @@ export default function Page() {
       </header>
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 12 }}>
-        {/* Editor with gutter */}
+        {/* Editor */}
         <div
           style={{
             display: 'flex',
@@ -253,34 +244,12 @@ export default function Page() {
             overflow: 'hidden',
           }}
         >
-          <Gutter
-            lines={lineNumbers}
-            breakpoints={breakpoints}
-            stoppedLine={stoppedLine}
-            scrollTop={scrollTop}
-            onToggle={toggleBreakpoint}
-          />
-          <textarea
-            ref={taRef}
+          <CodeEditor
             value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-            spellCheck={false}
-            wrap="off"
-            style={{
-              flex: 1,
-              padding: `0 12px`,
-              background: 'transparent',
-              color: '#e5e5e5',
-              border: 'none',
-              fontFamily: FONT,
-              fontSize: FONT_SIZE,
-              lineHeight: `${LINE_HEIGHT}px`,
-              resize: 'none',
-              outline: 'none',
-              whiteSpace: 'pre',
-              overflow: 'auto',
-            }}
+            onChange={setCode}
+            breakpoints={breakpoints}
+            onToggleBreakpoint={toggleBreakpoint}
+            stoppedLine={stoppedLine}
           />
         </div>
 
@@ -387,69 +356,6 @@ function Btn(props: { label: string; onClick: () => void; disabled?: boolean; co
     >
       {label}
     </button>
-  );
-}
-
-function Gutter(props: {
-  lines: number[];
-  breakpoints: Set<number>;
-  stoppedLine: number | null;
-  scrollTop: number;
-  onToggle: (line: number) => void;
-}) {
-  const { lines, breakpoints, stoppedLine, scrollTop, onToggle } = props;
-  return (
-    <div
-      style={{
-        width: 56,
-        flexShrink: 0,
-        borderRight: '1px solid #222',
-        background: '#0a0a0a',
-        overflow: 'hidden',
-        position: 'relative',
-        userSelect: 'none',
-      }}
-    >
-      <div style={{ transform: `translateY(${-scrollTop}px)`, paddingTop: 0 }}>
-        {lines.map((line) => {
-          const hasBp = breakpoints.has(line);
-          const isStopped = stoppedLine === line;
-          return (
-            <div
-              key={line}
-              onClick={() => onToggle(line)}
-              style={{
-                height: LINE_HEIGHT,
-                lineHeight: `${LINE_HEIGHT}px`,
-                paddingRight: 8,
-                fontSize: FONT_SIZE,
-                fontFamily: FONT,
-                color: isStopped ? '#000' : '#666',
-                background: isStopped ? '#fbbf24' : 'transparent',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-              }}
-              title={hasBp ? 'click to remove breakpoint' : 'click to add breakpoint'}
-            >
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: 10,
-                  height: 10,
-                  marginLeft: 6,
-                  borderRadius: '50%',
-                  background: hasBp ? '#ef4444' : 'transparent',
-                  border: hasBp ? 'none' : '1px solid #2a2a2a',
-                }}
-              />
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>{line}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
