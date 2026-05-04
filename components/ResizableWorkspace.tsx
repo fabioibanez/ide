@@ -207,6 +207,9 @@ export default function ResizableWorkspace({ panes }: ResizableWorkspaceProps) {
 
   return (
     <DndContext
+      // Stable id so a11y `aria-describedby` does not rely on a module-level
+      // counter that diverges between SSR and the client (hydration mismatch).
+      id="ide-resizable-workspace"
       sensors={sensors}
       collisionDetection={pointerWithin}
       onDragStart={onDragStart}
