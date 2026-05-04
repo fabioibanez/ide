@@ -86,12 +86,9 @@ export default function Page() {
       dapSeqRef.current = 1;
 
       const decoder = new TextDecoder();
-      const sink = () =>
-        new WritableStream<Uint8Array>({
-          write: (chunk) => setOutput((prev) => prev + decoder.decode(chunk)),
-        });
-      void rt.stdout.pipeTo(sink()).catch(() => {});
-      void rt.stderr.pipeTo(sink()).catch(() => {});
+      const onData = (chunk: Uint8Array) => setOutput((prev) => prev + decoder.decode(chunk));
+      rt.stdout.on('data', onData);
+      rt.stderr.on('data', onData);
 
       rt.fs = { 'main.c': code };
 
