@@ -1,39 +1,39 @@
-# ide
+# debugger.sh
 
-A barebones in-browser C IDE for exercising [`@jtrb/runtime`](https://www.npmjs.com/package/@jtrb/runtime) on a real deployment. Textarea + run button + breakpoints + variables panel. Nothing fancy.
+An in-browser C IDE for [`debugger-sh`](https://www.npmjs.com/package/debugger-sh). Editor, breakpoints, step debugging, interactive terminal, call stack, and variable inspector — all client-side.
 
-Lives at https://ide.fabioibanez.com — a Cloudflare Worker (Static Assets) attached to the `ide.fabioibanez.com` Custom Domain in the Cloudflare dashboard.
+Lives at https://debugger.sh
 
-## Local dev
+## Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000. The Next dev server sets `Cross-Origin-Embedder-Policy: require-corp` and `Cross-Origin-Opener-Policy: same-origin` (see [next.config.ts](./next.config.ts)) so `SharedArrayBuffer` works.
+Then open http://localhost:3000.
 
-## Production deploy
+The Next dev server sets COOP/COEP headers (see [next.config.ts](./next.config.ts)) so `SharedArrayBuffer` works for the wasm runtime.
 
-This is a Next.js static export (`output: 'export'`) deployed as a Cloudflare Worker with Static Assets:
+## Layout
 
-- [wrangler.jsonc](./wrangler.jsonc) — points wrangler at `out/`
-- [public/_headers](./public/_headers) — COOP/COEP for production (the Next `headers()` config is ignored in static export builds, which is why we duplicate them here)
-
-Pushing to `main` triggers the Worker Build, which runs `npm run build` then `npx wrangler deploy`. Takes ~30 seconds.
-
-## Feedback loop
-
-Consumes the published `@jtrb/runtime` from npm.
-
-```bash
-# in dev/runtime, after a change
-npm run release           # version patch + npm publish
-
-# here
-npm run bump              # npm i @jtrb/runtime@latest + commit + push
+```
+app/page.tsx              wires components + useExecution
+hooks/useExecution.ts     runtime + DAP lifecycle
+components/
+  CodeEditor.tsx          CodeMirror + breakpoint gutter + stopped-line highlight
+  Terminal.tsx            xterm.js (stdin + stdout)
+  VariablesPanel.tsx      call stack + variables
+  SourceActions.tsx       run / stop / step toolbar
+  ResizableWorkspace.tsx  draggable VS Code-style dock
 ```
 
-The push triggers the Cloudflare deploy automatically.
+## Bumping the runtime
 
-For a sub-second local-only loop without publishing: `npm link ../runtime` in this repo. Don't commit any resulting `package.json` change.
+```bash
+npm i debugger-sh@latest
+```
+
+## Deploy
+
+Static Next export (`output: 'export'`) served by a Cloudflare Worker. Pushing to `main` runs `npm run build` then `npx wrangler deploy` (~30s). [`public/_headers`](./public/_headers) carries COOP/COEP in production since the Next `headers()` config is dropped during static export.
