@@ -15,28 +15,28 @@ export function SourceActions(p: SourceActionsProps) {
   return (
     <>
       {!p.isRunning && (
-        <ActionBtn label="run" onClick={p.onRun} primary>
+        <ActionBtn label="run" onClick={p.onRun} variant="primary">
           <PlayIcon />
         </ActionBtn>
       )}
       {p.isPaused && (
         <>
-          <ActionBtn label="continue" onClick={p.onContinue}>
+          <ActionBtn label="continue" onClick={p.onContinue} variant="primary">
             <PlayIcon />
           </ActionBtn>
-          <ActionBtn label="step over" onClick={p.onStepOver}>
+          <ActionBtn label="step over" onClick={p.onStepOver} variant="primary">
             <StepOverIcon />
           </ActionBtn>
-          <ActionBtn label="step into" onClick={p.onStepIn}>
+          <ActionBtn label="step into" onClick={p.onStepIn} variant="primary">
             <StepIntoIcon />
           </ActionBtn>
-          <ActionBtn label="step out" onClick={p.onStepOut}>
+          <ActionBtn label="step out" onClick={p.onStepOut} variant="primary">
             <StepOutIcon />
           </ActionBtn>
         </>
       )}
       {p.isRunning && (
-        <ActionBtn label="stop" onClick={p.onStop}>
+        <ActionBtn label="stop" onClick={p.onStop} variant="danger">
           <StopIcon />
         </ActionBtn>
       )}
@@ -47,18 +47,18 @@ export function SourceActions(p: SourceActionsProps) {
 function ActionBtn({
   label,
   onClick,
-  primary,
+  variant,
   children,
 }: {
   label: string;
   onClick: () => void;
-  primary?: boolean;
+  variant?: 'primary' | 'danger';
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      className={`ide-action-btn${primary ? ' ide-action-btn--primary' : ''}`}
+      className={`ide-action-btn${variant ? ` ide-action-btn--${variant}` : ''}`}
       title={label}
       aria-label={label}
       onClick={onClick}
