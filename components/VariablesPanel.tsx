@@ -25,7 +25,7 @@ export function VariablesPanel(props: VariablesPanelProps) {
         minHeight: 0,
       }}
     >
-      <SectionHeader>call stack</SectionHeader>
+      {props.frames.length > 0 && <SectionHeader>call stack</SectionHeader>}
       <div style={{ maxHeight: '38%', overflowY: 'auto', flexShrink: 0 }}>
         <CallStack
           frames={props.frames}
@@ -33,7 +33,7 @@ export function VariablesPanel(props: VariablesPanelProps) {
           onSelectFrame={props.onSelectFrame}
         />
       </div>
-      <SectionHeader>variables</SectionHeader>
+      {props.scopes.length > 0 && <SectionHeader>variables</SectionHeader>}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 0' }}>
         <Variables scopes={props.scopes} expandVariable={props.expandVariable} />
       </div>
