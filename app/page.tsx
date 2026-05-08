@@ -54,9 +54,6 @@ export default function Page() {
           ),
           variables: (
             <VariablesPanel
-              isRunning={exec.isRunning}
-              isPaused={exec.isPaused}
-              debugLoading={exec.debugLoading}
               frames={exec.frames}
               selectedFrameId={exec.selectedFrameId}
               onSelectFrame={exec.selectFrame}
