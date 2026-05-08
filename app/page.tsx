@@ -1,138 +1,20 @@
 'use client';
 
-import { Runtime } from '@jtrb/runtime';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+
 import CodeEditor from '@/components/CodeEditor';
-import ResizableWorkspace from '@/components/ResizableWorkspace';
-import { defaultCode, SOURCE_PATH } from '@/components/constants';
-import type { DapResponse, DapVariable, Scope, ScopeView, StackFrame } from '@/components/dap-types';
+import { defaultCode } from '@/components/constants';
 import { IdeHeader } from '@/components/IdeHeader';
-import { OutputTerminal } from '@/components/OutputTerminal';
+import ResizableWorkspace from '@/components/ResizableWorkspace';
+import Terminal, { type TerminalHandle } from '@/components/Terminal';
 import { VariablesPanel } from '@/components/VariablesPanel';
+import { useExecution } from '@/hooks/useExecution';
 
 export default function Page() {
   const [code, setCode] = useState<string>(defaultCode);
-  const [output, setOutput] = useState<string>('');
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [isStopped, setIsStopped] = useState<boolean>(false);
   const [breakpoints, setBreakpoints] = useState<Set<number>>(() => new Set());
-  const [stoppedLine, setStoppedLine] = useState<number | null>(null);
-  const [scopes, setScopes] = useState<ScopeView[]>([]);
-
-  const runtimeRef = useRef<Runtime | null>(null);
-  const breakpointsRef = useRef<Set<number>>(breakpoints);
-  const dapSeqRef = useRef<number>(1);
-
-  useEffect(() => {
-    breakpointsRef.current = breakpoints;
-  }, [breakpoints]);
-
-  const dapSend = useCallback(<T,>(command: string, args: Record<string, unknown>) => {
-    const rt = runtimeRef.current;
-    if (!rt) return null;
-    const res = rt.debugger.send({
-      type: 'request',
-      seq: dapSeqRef.current++,
-      command,
-      arguments: args,
-    });
-    return res as DapResponse<T> | null;
-  }, []);
-
-  const sendBreakpoints = useCallback(() => {
-    const lines = Array.from(breakpointsRef.current).sort((a, b) => a - b);
-    dapSend('setBreakpoints', {
-      source: { path: SOURCE_PATH },
-      breakpoints: lines.map((line) => ({ line })),
-    });
-  }, [dapSend]);
-
-  const fetchScopesForTopFrame = useCallback(async () => {
-    const stackRes = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', { threadId: 1 });
-    const frames = stackRes?.body?.stackFrames ?? [];
-    if (frames.length === 0) {
-      setStoppedLine(null);
-      setScopes([]);
-      return;
-    }
-    const top = frames[0];
-    setStoppedLine(top.line);
-
-    const scopesRes = dapSend<{ scopes: Scope[] }>('scopes', { frameId: top.id });
-    const scopeList = scopesRes?.body?.scopes ?? [];
-
-    const views: ScopeView[] = [];
-    for (const sc of scopeList) {
-      const varsRes = dapSend<{ variables: DapVariable[] }>('variables', {
-        variablesReference: sc.variablesReference,
-      });
-      views.push({ name: sc.name, variables: varsRes?.body?.variables ?? [] });
-    }
-    setScopes(views);
-  }, [dapSend]);
-
-  const handleRun = async () => {
-    if (isRunning) return;
-    setOutput('');
-    setStoppedLine(null);
-    setScopes([]);
-    setIsStopped(false);
-    setIsRunning(true);
-
-    let rt: Runtime | null = null;
-    try {
-      rt = await Runtime.create('c');
-      runtimeRef.current = rt;
-      dapSeqRef.current = 1;
-
-      const decoder = new TextDecoder();
-      const onData = (chunk: Uint8Array) => setOutput((prev) => prev + decoder.decode(chunk));
-      rt.stdout.on('data', onData);
-      rt.stderr.on('data', onData);
-
-      rt.fs = { 'main.c': code };
-
-      rt.debugger.on('event', (msg: unknown) => {
-        const m = msg as { type?: string; event?: string };
-        if (m?.type !== 'event') return;
-        if (m.event === 'initialized') {
-          sendBreakpoints();
-          dapSend('setExceptionBreakpoints', { filters: [] });
-          dapSend('configurationDone', {});
-        } else if (m.event === 'stopped') {
-          setIsStopped(true);
-          void fetchScopesForTopFrame();
-        } else if (m.event === 'terminated') {
-          setIsStopped(false);
-          setStoppedLine(null);
-          setScopes([]);
-        }
-      });
-
-      dapSend('initialize', {});
-      await rt.run();
-    } catch (err) {
-      setOutput((prev) => prev + `\n[ide error] ${err instanceof Error ? err.message : String(err)}\n`);
-    } finally {
-      runtimeRef.current = null;
-      setIsRunning(false);
-      setIsStopped(false);
-      setStoppedLine(null);
-      setScopes([]);
-    }
-  };
-
-  const handleStop = () => {
-    runtimeRef.current?.stop();
-  };
-
-  const handleContinue = () => {
-    if (!isStopped) return;
-    dapSend('continue', { threadId: 1 });
-    setIsStopped(false);
-    setStoppedLine(null);
-    setScopes([]);
-  };
+  const terminalRef = useRef<TerminalHandle | null>(null);
+  const exec = useExecution({ terminalRef });
 
   const toggleBreakpoint = useCallback(
     (line: number) => {
@@ -140,14 +22,18 @@ export default function Page() {
         const next = new Set(prev);
         if (next.has(line)) next.delete(line);
         else next.add(line);
+        exec.applyBreakpoints(next);
         return next;
       });
-      if (runtimeRef.current) {
-        queueMicrotask(() => sendBreakpoints());
-      }
     },
-    [sendBreakpoints],
+    [exec],
   );
+
+  const clearBreakpoints = useCallback(() => {
+    const next = new Set<number>();
+    setBreakpoints(next);
+    exec.applyBreakpoints(next);
+  }, [exec]);
 
   return (
     <main
@@ -161,11 +47,15 @@ export default function Page() {
       }}
     >
       <IdeHeader
-        isRunning={isRunning}
-        isStopped={isStopped}
-        onRun={handleRun}
-        onContinue={handleContinue}
-        onStop={handleStop}
+        isRunning={exec.isRunning}
+        isPaused={exec.isPaused}
+        onRun={() => void exec.run(code, breakpoints)}
+        onStop={exec.stop}
+        onContinue={exec.resume}
+        onStepOver={exec.stepOver}
+        onStepIn={exec.stepIn}
+        onStepOut={exec.stepOut}
+        onClearBreakpoints={clearBreakpoints}
       />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -177,19 +67,22 @@ export default function Page() {
                 onChange={setCode}
                 breakpoints={breakpoints}
                 onToggleBreakpoint={toggleBreakpoint}
-                stoppedLine={stoppedLine}
+                stoppedLine={exec.stoppedLine}
               />
             ),
             variables: (
               <VariablesPanel
-                isStopped={isStopped}
-                isRunning={isRunning}
-                stoppedLine={stoppedLine}
-                scopes={scopes}
-                dapSend={dapSend}
+                isRunning={exec.isRunning}
+                isPaused={exec.isPaused}
+                debugLoading={exec.debugLoading}
+                frames={exec.frames}
+                selectedFrameId={exec.selectedFrameId}
+                onSelectFrame={exec.selectFrame}
+                scopes={exec.scopes}
+                expandVariable={exec.expandVariable}
               />
             ),
-            output: <OutputTerminal output={output} />,
+            output: <Terminal ref={terminalRef} />,
           }}
         />
       </div>
