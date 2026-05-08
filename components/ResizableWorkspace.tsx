@@ -74,10 +74,12 @@ function persistPlacement(p: Placement) {
 function DockZone({
   zone,
   pane,
+  actions,
   children,
 }: {
   zone: ZoneId;
   pane: PaneId;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -136,6 +138,19 @@ function DockZone({
           ⠿
         </span>
         {PANE_LABELS[pane]}
+        {actions && (
+          <>
+            <div style={{ flex: 1 }} />
+            <div
+              // Stop drag activation when interacting with actions; the title bar
+              // owns dnd-kit's pointerdown listener.
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'auto' }}
+            >
+              {actions}
+            </div>
+          </>
+        )}
       </div>
       <div
         style={{
@@ -155,13 +170,15 @@ function DockZone({
 
 export type ResizableWorkspaceProps = {
   panes: Record<PaneId, ReactNode>;
+  /** Optional action slot rendered on the right of each pane's title bar. */
+  paneActions?: Partial<Record<PaneId, ReactNode>>;
 };
 
 /**
  * VS Code–style dock: main (left) | side (right) on top, full-width panel on bottom.
  * Drag a pane’s title onto another zone to swap. Resize with the splitters.
  */
-export default function ResizableWorkspace({ panes }: ResizableWorkspaceProps) {
+export default function ResizableWorkspace({ panes, paneActions }: ResizableWorkspaceProps) {
   const [placement, setPlacement] = useState<Placement>(DEFAULT_PLACEMENT);
   const [dragZone, setDragZone] = useState<ZoneId | null>(null);
 
@@ -241,13 +258,13 @@ export default function ResizableWorkspace({ panes }: ResizableWorkspaceProps) {
               style={{ height: '100%', minHeight: 0, width: '100%' }}
             >
               <Panel id="main" minSize="28%" defaultSize="73%">
-                <DockZone zone="main" pane={placement.main}>
+                <DockZone zone="main" pane={placement.main} actions={paneActions?.[placement.main]}>
                   {panes[placement.main]}
                 </DockZone>
               </Panel>
               <Separator id="sep-main-side" style={{ width: 5 }} />
               <Panel id="side" minSize="18%" defaultSize="27%">
-                <DockZone zone="side" pane={placement.side}>
+                <DockZone zone="side" pane={placement.side} actions={paneActions?.[placement.side]}>
                   {panes[placement.side]}
                 </DockZone>
               </Panel>
@@ -255,7 +272,7 @@ export default function ResizableWorkspace({ panes }: ResizableWorkspaceProps) {
           </Panel>
           <Separator id="sep-top-panel" style={{ height: 5 }} />
           <Panel id="bottom" minSize="14%" defaultSize="30%">
-            <DockZone zone="panel" pane={placement.panel}>
+            <DockZone zone="panel" pane={placement.panel} actions={paneActions?.[placement.panel]}>
               {panes[placement.panel]}
             </DockZone>
           </Panel>
