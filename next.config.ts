@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next';
 
-// COOP/COEP are required by @jtrb/runtime to use SharedArrayBuffer for stdin.
+// COOP/COEP are required by debugger-sh to use SharedArrayBuffer for stdin.
 //
 // Production (Cloudflare Workers Static Assets): set via `public/_headers`,
 // which is copied into `out/_headers` and read by the Workers asset server.

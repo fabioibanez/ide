@@ -1,6 +1,6 @@
 export const metadata = {
   title: 'IDE',
-  description: 'A barebones in-browser C/C++ IDE powered by @jtrb/runtime',
+  description: 'A barebones in-browser C/C++ IDE powered by debugger-sh',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
