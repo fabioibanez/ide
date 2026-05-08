@@ -37,8 +37,10 @@ export default function Page() {
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
+        gap: 10,
       }}
     >
+      <Brand />
       <ResizableWorkspace
         panes={{
           editor: (
@@ -82,3 +84,9 @@ export default function Page() {
     </main>
   );
 }
+
+const Brand = () => (
+  <div style={{ padding: '0 4px', fontSize: 12, color: '#6b7280', letterSpacing: '0.02em', userSelect: 'none' }}>
+    debugger<span style={{ color: '#ef4444' }}>.</span>sh
+  </div>
+);

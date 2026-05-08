@@ -1,5 +1,5 @@
 export const metadata = {
-  title: 'IDE',
+  title: 'debugger.sh',
   description: 'A barebones in-browser C/C++ IDE powered by debugger-sh',
 };
 
