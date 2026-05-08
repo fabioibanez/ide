@@ -1,59 +1,181 @@
 'use client';
 
-import type { DapSendFn, ScopeView } from './dap-types';
+import type { ReactNode } from 'react';
+
+import type { DapVariable, ScopeView, StackFrame } from './dap-types';
 import { VariableRow } from './VariableRow';
 
-export function VariablesPanel(props: {
-  isStopped: boolean;
+export type VariablesPanelProps = {
   isRunning: boolean;
-  stoppedLine: number | null;
+  isPaused: boolean;
+  debugLoading: boolean;
+  frames: StackFrame[];
+  selectedFrameId: number | null;
+  onSelectFrame: (id: number) => void;
   scopes: ScopeView[];
-  dapSend: DapSendFn;
-}) {
-  const { isStopped, isRunning, stoppedLine, scopes, dapSend } = props;
+  expandVariable: (ref: number) => DapVariable[];
+};
 
+export function VariablesPanel(props: VariablesPanelProps) {
   return (
     <aside
       style={{
         height: '100%',
-        padding: 12,
-        overflow: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
         fontSize: 12,
         boxSizing: 'border-box',
+        minHeight: 0,
       }}
     >
-      {!isStopped && (
-        <div style={{ color: '#555', fontStyle: 'italic' }}>
-          {isRunning ? 'running — set a breakpoint and run again to inspect' : 'not running'}
-        </div>
-      )}
-      {isStopped && stoppedLine !== null && (
-        <div style={{ color: '#fbbf24', marginBottom: 8 }}>stopped at line {stoppedLine}</div>
-      )}
-      {isStopped && scopes.length === 0 && (
-        <div style={{ color: '#555', fontStyle: 'italic' }}>no scopes available</div>
-      )}
+      <SectionHeader>call stack</SectionHeader>
+      <div style={{ maxHeight: '38%', overflowY: 'auto', flexShrink: 0 }}>
+        <CallStack
+          isRunning={props.isRunning}
+          isPaused={props.isPaused}
+          debugLoading={props.debugLoading}
+          frames={props.frames}
+          selectedFrameId={props.selectedFrameId}
+          onSelectFrame={props.onSelectFrame}
+        />
+      </div>
+      <SectionHeader>variables</SectionHeader>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 0' }}>
+        <Variables
+          isPaused={props.isPaused}
+          scopes={props.scopes}
+          expandVariable={props.expandVariable}
+        />
+      </div>
+    </aside>
+  );
+}
+
+function CallStack({
+  isRunning,
+  isPaused,
+  debugLoading,
+  frames,
+  selectedFrameId,
+  onSelectFrame,
+}: Pick<
+  VariablesPanelProps,
+  'isRunning' | 'isPaused' | 'debugLoading' | 'frames' | 'selectedFrameId' | 'onSelectFrame'
+>) {
+  if (!isPaused && frames.length === 0) {
+    return (
+      <Empty>
+        {isRunning ? 'set a breakpoint and rerun to inspect' : 'not running'}
+      </Empty>
+    );
+  }
+  if (debugLoading && frames.length === 0) {
+    return <Empty>loading…</Empty>;
+  }
+  return (
+    <>
+      {frames.map((f) => {
+        const selected = selectedFrameId === f.id;
+        return (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => onSelectFrame(f.id)}
+            style={{
+              display: 'block',
+              width: '100%',
+              textAlign: 'left',
+              padding: '4px 12px',
+              border: 'none',
+              cursor: 'pointer',
+              background: selected ? 'rgba(99, 102, 241, 0.18)' : 'transparent',
+              borderLeft: `2px solid ${selected ? '#818cf8' : 'transparent'}`,
+              color: '#e5e5e5',
+              fontFamily: 'inherit',
+              fontSize: 12,
+              fontWeight: selected ? 600 : 400,
+            }}
+          >
+            {f.name}
+            {f.line != null && (
+              <span style={{ color: '#777', fontWeight: 400, marginLeft: 4 }}>
+                :{f.line}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+function Variables({
+  isPaused,
+  scopes,
+  expandVariable,
+}: Pick<VariablesPanelProps, 'isPaused' | 'scopes' | 'expandVariable'>) {
+  if (!isPaused && scopes.length === 0) {
+    return <Empty>locals appear here while paused</Empty>;
+  }
+  return (
+    <>
       {scopes.map((scope) => (
-        <div key={scope.name} style={{ marginBottom: 12 }}>
+        <div key={scope.name} style={{ marginBottom: 8 }}>
           <div
             style={{
-              color: '#a5b4fc',
-              fontWeight: 600,
-              marginBottom: 4,
-              fontSize: 11,
+              padding: '2px 12px',
+              fontSize: 10,
               letterSpacing: 0.6,
+              color: '#a5b4fc',
               textTransform: 'uppercase',
+              fontWeight: 600,
             }}
           >
             {scope.name}
           </div>
           {scope.variables.length === 0 ? (
-            <div style={{ color: '#555', paddingLeft: 8 }}>(empty)</div>
+            <div style={{ paddingLeft: 22, color: '#555' }}>(empty)</div>
           ) : (
-            scope.variables.map((v) => <VariableRow key={v.name} variable={v} dapSend={dapSend} depth={0} />)
+            <div style={{ paddingLeft: 8 }}>
+              {scope.variables.map((v) => (
+                <VariableRow
+                  key={v.name}
+                  variable={v}
+                  expand={expandVariable}
+                  depth={0}
+                />
+              ))}
+            </div>
           )}
         </div>
       ))}
-    </aside>
+    </>
+  );
+}
+
+function SectionHeader({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: '6px 12px',
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: 0.8,
+        color: '#888',
+        textTransform: 'uppercase',
+        borderBottom: '1px solid #1a1a1a',
+        flexShrink: 0,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Empty({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ padding: '8px 12px', color: '#555', fontStyle: 'italic' }}>
+      {children}
+    </div>
   );
 }
