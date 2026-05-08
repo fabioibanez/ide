@@ -2,22 +2,56 @@
 
 import { Btn } from './Btn';
 
-export function IdeHeader(props: {
+export type IdeHeaderProps = {
   isRunning: boolean;
-  isStopped: boolean;
+  isPaused: boolean;
   onRun: () => void;
-  onContinue: () => void;
   onStop: () => void;
-}) {
-  const { isRunning, isStopped, onRun, onContinue, onStop } = props;
+  onContinue: () => void;
+  onStepOver: () => void;
+  onStepIn: () => void;
+  onStepOut: () => void;
+  onClearBreakpoints: () => void;
+};
+
+export function IdeHeader(props: IdeHeaderProps) {
+  const {
+    isRunning,
+    isPaused,
+    onRun,
+    onStop,
+    onContinue,
+    onStepOver,
+    onStepIn,
+    onStepOut,
+    onClearBreakpoints,
+  } = props;
 
   return (
-    <header style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <header style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>ide</h1>
       <div style={{ flex: 1 }} />
-      <Btn label={isRunning ? 'running…' : 'run'} onClick={onRun} disabled={isRunning} color="#2563eb" />
-      <Btn label="continue" onClick={onContinue} disabled={!isStopped} color="#16a34a" />
+      <Btn
+        label={isRunning ? 'running…' : 'run'}
+        onClick={onRun}
+        disabled={isRunning}
+        color="#2563eb"
+      />
       <Btn label="stop" onClick={onStop} disabled={!isRunning} color="#7f1d1d" />
+      {isPaused && (
+        <>
+          <Btn label="continue" onClick={onContinue} color="#16a34a" />
+          <Btn label="step over" onClick={onStepOver} color="#334155" />
+          <Btn label="step in" onClick={onStepIn} color="#334155" />
+          <Btn label="step out" onClick={onStepOut} color="#334155" />
+        </>
+      )}
+      <Btn
+        label="clear bps"
+        onClick={onClearBreakpoints}
+        disabled={isRunning && !isPaused}
+        color="#3f3f46"
+      />
     </header>
   );
 }
