@@ -40,3 +40,12 @@
   outline: 1px solid rgba(99, 102, 241, 0.6);
   outline-offset: 1px;
 }
+
+.ide-action-btn--primary,
+.ide-action-btn--primary:hover {
+  background: rgba(255, 255, 255, 0.10);
+  color: #fff;
+}
+.ide-action-btn--primary:hover {
+  background: rgba(255, 255, 255, 0.18);
+}

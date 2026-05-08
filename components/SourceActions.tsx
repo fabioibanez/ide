@@ -15,7 +15,7 @@ export function SourceActions(p: SourceActionsProps) {
   return (
     <>
       {!p.isRunning && (
-        <ActionBtn label="run" onClick={p.onRun}>
+        <ActionBtn label="run" onClick={p.onRun} primary>
           <PlayIcon />
         </ActionBtn>
       )}
@@ -47,16 +47,18 @@ export function SourceActions(p: SourceActionsProps) {
 function ActionBtn({
   label,
   onClick,
+  primary,
   children,
 }: {
   label: string;
   onClick: () => void;
+  primary?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      className="ide-action-btn"
+      className={`ide-action-btn${primary ? ' ide-action-btn--primary' : ''}`}
       title={label}
       aria-label={label}
       onClick={onClick}
