@@ -8,6 +8,7 @@ import { StateEffect, StateField, type Extension } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
+
 // ---------------------------------------------------------------------------
 // Theme
 // ---------------------------------------------------------------------------

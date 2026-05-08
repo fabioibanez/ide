@@ -1,6 +1,7 @@
 'use client';
 
 import { FONT, FONT_SIZE } from './constants';
+import { parseAnsi } from '@/lib/ansi';
 
 export function OutputTerminal(props: { output: string }) {
   const { output } = props;
@@ -21,7 +22,19 @@ export function OutputTerminal(props: { output: string }) {
         minHeight: 0,
       }}
     >
-      {output || <span style={{ color: '#555' }}>output will appear here</span>}
+      {output ? parseAnsi(output).map((s, i) => (
+        <span
+          key={i}
+          style={{
+            color: s.fg,
+            background: s.bg,
+            fontWeight: s.bold ? 'bold' : undefined,
+            textDecoration: s.underline ? 'underline' : undefined,
+          }}
+        >
+          {s.text}
+        </span>
+      )) : <span style={{ color: '#555' }}>output will appear here</span>}
     </pre>
   );
 }
