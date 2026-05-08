@@ -35,6 +35,3 @@ export type ScopeView = {
   name: string;
   variables: DapVariable[];
 };
-
-/** Callback passed into VariableRow (sync DAP request from main thread runtime). */
-export type DapSendFn = <T>(command: string, args: Record<string, unknown>) => DapResponse<T> | null;
