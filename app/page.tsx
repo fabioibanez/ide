@@ -29,12 +29,6 @@ export default function Page() {
     [exec],
   );
 
-  const clearBreakpoints = useCallback(() => {
-    const next = new Set<number>();
-    setBreakpoints(next);
-    exec.applyBreakpoints(next);
-  }, [exec]);
-
   return (
     <main
       style={{
@@ -55,7 +49,6 @@ export default function Page() {
         onStepOver={exec.stepOver}
         onStepIn={exec.stepIn}
         onStepOut={exec.stepOut}
-        onClearBreakpoints={clearBreakpoints}
       />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

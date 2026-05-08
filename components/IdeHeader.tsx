@@ -11,7 +11,6 @@ export type IdeHeaderProps = {
   onStepOver: () => void;
   onStepIn: () => void;
   onStepOut: () => void;
-  onClearBreakpoints: () => void;
 };
 
 export function IdeHeader(props: IdeHeaderProps) {
@@ -24,7 +23,6 @@ export function IdeHeader(props: IdeHeaderProps) {
     onStepOver,
     onStepIn,
     onStepOut,
-    onClearBreakpoints,
   } = props;
 
   return (
@@ -46,12 +44,6 @@ export function IdeHeader(props: IdeHeaderProps) {
           <Btn label="step out" onClick={onStepOut} color="#334155" />
         </>
       )}
-      <Btn
-        label="clear bps"
-        onClick={onClearBreakpoints}
-        disabled={isRunning && !isPaused}
-        color="#3f3f46"
-      />
     </header>
   );
 }
