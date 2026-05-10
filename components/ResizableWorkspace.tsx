@@ -104,7 +104,6 @@ function DockZone({
         minHeight: 0,
         minWidth: 0,
         background: '#0d0d0d',
-        borderRadius: 4,
         overflow: 'hidden',
         outline: isOver ? '2px solid rgba(59, 130, 246, 0.65)' : undefined,
         outlineOffset: -1,
@@ -121,11 +120,15 @@ function DockZone({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '5px 10px',
-          background: '#121212',
+          boxSizing: 'border-box',
+          minHeight: 28,
+          padding: '0 10px',
+          background: '#0d0d0d',
           borderBottom: '1px solid #1a1a1a',
           fontSize: 10,
           letterSpacing: 1.4,
+          fontWeight: 600,
+          lineHeight: '10px',
           textTransform: 'uppercase',
           color: '#888',
           cursor: 'grab',
@@ -134,7 +137,7 @@ function DockZone({
           opacity: isDragging ? 0.45 : 1,
         }}
       >
-        <span style={{ color: '#555', fontSize: 13, lineHeight: 1 }} aria-hidden>
+        <span style={{ color: '#555', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center' }} aria-hidden>
           ⠿
         </span>
         {PANE_LABELS[pane]}
