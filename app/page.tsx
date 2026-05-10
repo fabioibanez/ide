@@ -40,7 +40,7 @@ export default function Page() {
         gap: 10,
       }}
     >
-      <Brand />
+      <Logo />
       <ResizableWorkspace
         panes={{
           editor: (
@@ -82,8 +82,8 @@ export default function Page() {
   );
 }
 
-const Brand = () => (
-  <div style={{ padding: '0 4px', fontSize: 12, color: '#6b7280', letterSpacing: '0.02em', userSelect: 'none' }}>
+const Logo = () => (
+  <a href="https://github.com/debugger-sh/debugger.sh" target="_blank" rel="noreferrer" style={{ padding: '0 4px', fontSize: 12, color: '#6b7280', letterSpacing: '0.02em', userSelect: 'none', textDecoration: 'none' }}>
     debugger<span style={{ color: '#ef4444' }}>.</span>sh
-  </div>
+  </a>
 );
