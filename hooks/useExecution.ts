@@ -1,6 +1,6 @@
 'use client';
 
-import { Runtime } from 'debugger-sh';
+import { Engine } from 'debugger-sh';
 import { useCallback, useRef, useState } from 'react';
 
 import { SOURCE_PATH } from '@/components/constants';
@@ -47,7 +47,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   const [scopes, setScopes] = useState<ScopeView[]>([]);
   const [debugLoading, setDebugLoading] = useState(false);
 
-  const runtimeRef = useRef<Runtime | null>(null);
+  const runtimeRef = useRef<Engine | null>(null);
   const isRunningRef = useRef(false);
   const dapSeqRef = useRef(1);
   const ioCleanupRef = useRef<(() => void) | null>(null);
@@ -128,7 +128,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   }, []);
 
   const wireStdout = useCallback(
-    (rt: Runtime) => {
+    (rt: Engine) => {
       const term = terminalRef.current;
       if (!term) return;
       const decoder = new TextDecoder();
@@ -146,7 +146,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   );
 
   const wireStdin = useCallback(
-    (rt: Runtime) => {
+    (rt: Engine) => {
       const term = terminalRef.current;
       if (!term) return;
       const encoder = new TextEncoder();
@@ -202,7 +202,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       terminalRef.current?.focus();
 
       try {
-        const rt = await Runtime.create('c');
+        const rt = await Engine.create('c');
         runtimeRef.current = rt;
         dapSeqRef.current = 1;
 
