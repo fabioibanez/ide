@@ -105,9 +105,6 @@ function DockZone({
         minWidth: 0,
         background: '#0d0d0d',
         overflow: 'hidden',
-        outline: isOver ? '2px solid rgba(59, 130, 246, 0.65)' : undefined,
-        outlineOffset: -1,
-        transition: 'outline 0.12s ease',
       }}
     >
       <div
